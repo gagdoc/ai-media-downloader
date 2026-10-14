@@ -7,9 +7,28 @@ import shutil
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
+import tempfile
 from playwright.sync_api import sync_playwright
 import yt_dlp
 from PIL import Image
+
+def sanitize_base_dir(base_dir):
+    """
+    Ensures the base directory is writable in cloud environments (e.g. Streamlit Cloud).
+    If base_dir starts with /Users (macOS path) or cannot be created, falls back to tempdir.
+    """
+    if not base_dir or (base_dir.startswith("/Users") and not os.path.exists("/Users")):
+        safe_dir = os.path.join(tempfile.gettempdir(), "media_downloads")
+        os.makedirs(safe_dir, exist_ok=True)
+        return safe_dir
+    try:
+        os.makedirs(base_dir, exist_ok=True)
+        return base_dir
+    except (PermissionError, OSError):
+        safe_dir = os.path.join(tempfile.gettempdir(), "media_downloads")
+        os.makedirs(safe_dir, exist_ok=True)
+        return safe_dir
+
 
 def launch_browser(playwright_instance):
     """
@@ -245,6 +264,7 @@ def download_images(keyword, urls, base_dir="downloads", progress_callback=None)
     """
     Downloads images from a list of URLs and saves them into {base_dir}/{keyword}/.
     """
+    base_dir = sanitize_base_dir(base_dir)
     download_dir = os.path.join(base_dir, keyword)
     os.makedirs(download_dir, exist_ok=True)
     
@@ -417,6 +437,7 @@ def download_youtube_video(url, base_dir="downloads", quality="1080p", progress_
     Re-encodes video & audio with H.264/AAC + faststart to ensure 100% macOS QuickTime & Finder preview compatibility if reencode_mac is True.
     """
     import imageio_ffmpeg
+    base_dir = sanitize_base_dir(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
     def hook(d):
@@ -647,6 +668,7 @@ def download_web_video(m3u8_url, base_dir="downloads", output_name="web_video.mp
     """
     Downloads HLS stream with customized headers (e.g., Referer) and configurations.
     """
+    base_dir = sanitize_base_dir(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
     def hook(d):
@@ -718,6 +740,8 @@ def merge_videos(video_paths, output_path, resolution="1080p", progress_callback
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     output_dir = os.path.dirname(output_path)
     if output_dir:
+        output_dir = sanitize_base_dir(output_dir)
+        output_path = os.path.join(output_dir, os.path.basename(output_path))
         os.makedirs(output_dir, exist_ok=True)
         
     res_map = {
@@ -938,7 +962,9 @@ def merge_images(image_paths, output_path, direction="vertical", resize_mode="mi
                 
         # 4. 결과 저장
         ext = os.path.splitext(output_path)[1].lower()
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        out_dir = sanitize_base_dir(os.path.dirname(output_path))
+        output_path = os.path.join(out_dir, os.path.basename(output_path))
+        os.makedirs(out_dir, exist_ok=True)
         
         if ext in ['.jpg', '.jpeg']:
             # RGBA를 RGB로 변환 (흰색 배경)
