@@ -144,7 +144,9 @@ def render_save_dir_selector(session_key, label="📁 저장 디렉토리 경로
             st.button("📁 폴더 선택", key=f"{session_key}_btn", on_click=on_pick, use_container_width=True)
     else:
         st.info("☁️ **웹 브라우저 다운로드 모드**: 작업 완료 후 아래 생성되는 **[📥 다운로드 버튼]**을 눌러 내 컴퓨터로 바로 저장합니다.")
-
+# Helper for environment-aware download directory
+DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if IS_MAC_LOCAL else os.path.join(tempfile.gettempdir(), "media_downloads")
+os.makedirs(DEFAULT_DIR, exist_ok=True)
 
 
 # Helper function to render a direct browser download button
