@@ -130,9 +130,21 @@ def format_duration(seconds):
         return f"{hours:02d}:{mins:02d}:{secs:02d}"
     return f"{mins:02d}:{secs:02d}"
 
-# Helper for environment-aware download directory
-DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if IS_MAC_LOCAL else os.path.join(tempfile.gettempdir(), "media_downloads")
-os.makedirs(DEFAULT_DIR, exist_ok=True)
+# Helper to render folder path selector (Shows Finder button on Mac, clean info in Cloud)
+def render_save_dir_selector(session_key, label="📁 저장 디렉토리 경로"):
+    if IS_MAC_LOCAL:
+        p_col, b_col = st.columns([3, 1])
+        with p_col:
+            st.text_input(label, key=session_key)
+        with b_col:
+            def on_pick():
+                path = select_folder_via_applescript("저장할 폴더를 선택하세요:")
+                if path:
+                    st.session_state[session_key] = path
+            st.button("📁 폴더 선택", key=f"{session_key}_btn", on_click=on_pick, use_container_width=True)
+    else:
+        st.info("☁️ **웹 브라우저 다운로드 모드**: 작업 완료 후 아래 생성되는 **[📥 다운로드 버튼]**을 눌러 내 컴퓨터로 바로 저장합니다.")
+
 
 
 # Helper function to render a direct browser download button
@@ -247,17 +259,9 @@ with tab1:
             
         subfolder_name = st.text_input("📁 세부 저장 폴더명 (상위 폴더 하위에 생성됩니다)", value=default_subfolder, key="img_subfolder")
             
-        # Folder Path Row Layout (Text input + Finder button)
-        path_col, button_col = st.columns([3, 1])
-        with path_col:
-            st.text_input("📁 저장 디렉토리 경로", key="save_dir")
-        with button_col:
-            def on_img_folder_pick():
-                path = select_folder_via_applescript("이미지를 저장할 폴더를 선택하세요:")
-                if path:
-                    st.session_state.save_dir = path
-                    
-            st.button("📁 폴더 선택", key="img_finder_btn", on_click=on_img_folder_pick, use_container_width=True)
+        # Folder Path Selector
+        render_save_dir_selector("save_dir", "📁 저장 디렉토리 경로")
+
                     
         st.write("")
         search_btn = st.button("🔍 이미지 수집 및 분석 시작", key="img_search_btn", use_container_width=True)
@@ -418,17 +422,9 @@ with tab2:
         
         yt_url = st.text_input("🔗 유튜브 / 인스타 영상 링크(URL) 입력", placeholder="https://youtu.be/... 또는 https://www.instagram.com/reel/...")
         
-        # Folder Path Row Layout (Text input + Finder button)
-        yt_path_col, yt_button_col = st.columns([3, 1])
-        with yt_path_col:
-            st.text_input("📁 다운로드 폴더 지정", key="yt_save_dir")
-        with yt_button_col:
-            def on_yt_folder_pick():
-                path = select_folder_via_applescript("영상을 저장할 폴더를 선택하세요:")
-                if path:
-                    st.session_state.yt_save_dir = path
-                    
-            st.button("📁 폴더 선택", key="yt_finder_btn", on_click=on_yt_folder_pick, use_container_width=True)
+        # Folder Path Selector
+        render_save_dir_selector("yt_save_dir", "📁 다운로드 폴더 지정")
+
         
         st.write("")
         analyze_btn = st.button("🔍 영상 정보 분석", key="yt_analyze_btn", use_container_width=True)
@@ -614,15 +610,8 @@ with tab_mac:
         mac_crf_val = mac_crf_map[mac_quality]
 
         # Output folder selector
-        mac_out_path_col, mac_out_btn_col = st.columns([3, 1])
-        with mac_out_path_col:
-            st.text_input("📁 재인코딩된 MP4 저장 폴더", key="mac_reencode_out_dir")
-        with mac_out_btn_col:
-            def on_mac_out_folder_pick():
-                path = select_folder_via_applescript("변환된 비디오를 저장할 폴더를 선택하세요:")
-                if path:
-                    st.session_state.mac_reencode_out_dir = path
-            st.button("📁 폴더 선택", key="mac_out_finder_btn", on_click=on_mac_out_folder_pick, use_container_width=True)
+        render_save_dir_selector("mac_reencode_out_dir", "📁 재인코딩된 MP4 저장 폴더")
+
 
         st.write("")
         mac_convert_btn = st.button("🍏 맥북 호환 재인코딩 시작", key="mac_reencode_start_btn", use_container_width=True)
@@ -783,16 +772,8 @@ with tab3:
         video_name = st.text_input("📹 출력 영상 파일명", value="slideshow.mp4")
         
         # Output Folder Picker
-        out_path_col, out_button_col = st.columns([3, 1])
-        with out_path_col:
-            st.text_input("📁 저장 디렉토리 경로 지정", key="slideshow_out_dir")
-        with out_button_col:
-            def on_slideshow_out_folder_pick():
-                path = select_folder_via_applescript("동영상을 저장할 대상 폴더를 선택하세요:")
-                if path:
-                    st.session_state.slideshow_out_dir = path
-                    
-            st.button("📁 폴더 선택", key="slideshow_out_finder_btn", on_click=on_slideshow_out_folder_pick, use_container_width=True)
+        render_save_dir_selector("slideshow_out_dir", "📁 저장 디렉토리 경로 지정")
+
                     
         st.write("")
         compile_btn = st.button("🎬 슬라이드쇼 비디오 제작 시작", use_container_width=True)
@@ -856,17 +837,9 @@ with tab4:
         web_page_url = st.text_input("🔗 웹페이지 링크(URL) 입력", placeholder="https://javclick.com/en/movie-info/6ab942ac131836087e0e7fd0", key="web_page_url_input")
         web_output_name = st.text_input("📹 저장할 파일명 (.mp4)", value=st.session_state.get('web_suggested_filename', 'downloaded_video.mp4'), key="web_output_name_input")
         
-        # Folder Path Row Layout (Text input + Finder button)
-        web_path_col, web_button_col = st.columns([3, 1])
-        with web_path_col:
-            st.text_input("📁 다운로드 폴더 지정", key="web_save_dir")
-        with web_button_col:
-            def on_web_folder_pick():
-                path = select_folder_via_applescript("영상을 저장할 폴더를 선택하세요:")
-                if path:
-                    st.session_state.web_save_dir = path
-                    
-            st.button("📁 폴더 선택", key="web_finder_btn", on_click=on_web_folder_pick, use_container_width=True)
+        # Folder Path Selector
+        render_save_dir_selector("web_save_dir", "📁 다운로드 폴더 지정")
+
         
         st.write("")
         web_analyze_btn = st.button("🔍 웹페이지 스트리밍 주소 분석", key="web_analyze_btn", use_container_width=True)
@@ -1438,15 +1411,8 @@ with tab_img_merge:
         img_out_name = st.text_input("📝 출력 파일명", value="merged_image.png", key="img_merge_out_name")
         
         # Save Dir Selector
-        im_path_col, im_save_btn_col = st.columns([3, 1])
-        with im_path_col:
-            st.text_input("📁 저장 폴더 지정", key="img_merge_save_dir")
-        with im_save_btn_col:
-            def on_img_merge_save_pick():
-                path = select_folder_via_applescript("병합된 이미지를 저장할 폴더를 선택하세요:")
-                if path:
-                    st.session_state.img_merge_save_dir = path
-            st.button("📁 폴더 선택", key="img_merge_save_finder_btn", on_click=on_img_merge_save_pick, use_container_width=True)
+        render_save_dir_selector("img_merge_save_dir", "📁 저장 폴더 지정")
+
             
         img_start_btn = st.button("🖼️ 이미지 병합 시작", key="img_merge_start_btn", use_container_width=True)
         
