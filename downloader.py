@@ -711,16 +711,20 @@ def download_web_video(m3u8_url, base_dir="downloads", output_name="web_video.mp
             info = ydl.extract_info(m3u8_url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Post-processing: Remux using ffmpeg to resolve macOS QuickTime and Premiere Pro compatibility issues
+            # Post-processing: Remux using ffmpeg if requested
             if reencode_mac and filename and os.path.exists(filename):
                 mac_encoded = reencode_video_for_mac(filename, output_path, crf="22")
-                if mac_encoded:
+                if mac_encoded and os.path.exists(mac_encoded):
                     return mac_encoded
             
-            return filename
+            if filename and os.path.exists(filename):
+                return filename
+            if os.path.exists(output_path):
+                return output_path
+            return None
         except Exception as e:
             print(f"Web video download failed: {e}")
-            return None
+            raise e
 
 
 def merge_videos(video_paths, output_path, resolution="1080p", progress_callback=None):

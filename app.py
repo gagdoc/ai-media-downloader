@@ -918,26 +918,30 @@ with tab4:
                     f"저장 위치: {os.path.join(st.session_state.web_save_dir, web_output_name)}"
                 )
                 
-            downloaded_file = download_web_video(
-                m3u8_url=st.session_state.web_m3u8_url,
-                base_dir=st.session_state.web_save_dir,
-                output_name=web_output_name,
-                progress_callback=web_progress_cb,
-                referer=st.session_state.get('web_m3u8_referer'),
-                reencode_mac=web_mac_reencode_opt
-            )
-            
-            if downloaded_file:
-                web_progress.progress(1.0)
-                web_progress_text.markdown("**다운로드 진행률:** `100.0%` 완료")
-                web_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 준비되었습니다:\n\n`{os.path.basename(downloaded_file)}`")
-                web_log_box.code(f"성공적으로 웹 비디오 추출 완료.\n완료 경로: {downloaded_file}")
+            try:
+                downloaded_file = download_web_video(
+                    m3u8_url=st.session_state.web_m3u8_url,
+                    base_dir=st.session_state.web_save_dir,
+                    output_name=web_output_name,
+                    progress_callback=web_progress_cb,
+                    referer=st.session_state.get('web_m3u8_referer'),
+                    reencode_mac=web_mac_reencode_opt
+                )
                 
-                # Direct browser download & preview
-                render_download_button(downloaded_file, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
-                st.video(downloaded_file)
-            else:
-                web_status.error("❌ 영상 다운로드 중 오류가 발생했습니다. pycryptodomex 패키지 및 네트워크 환경을 확인해 주세요.")
+                if downloaded_file and os.path.exists(downloaded_file):
+                    web_progress.progress(1.0)
+                    web_progress_text.markdown("**다운로드 진행률:** `100.0%` 완료")
+                    web_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 준비되었습니다:\n\n`{os.path.basename(downloaded_file)}`")
+                    web_log_box.code(f"성공적으로 웹 비디오 추출 완료.\n완료 경로: {downloaded_file}")
+                    
+                    # Direct browser download & preview
+                    render_download_button(downloaded_file, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
+                    st.video(downloaded_file)
+                else:
+                    web_status.error("❌ 영상 다운로드 중 오류가 발생했습니다.")
+            except Exception as e:
+                web_status.error(f"❌ 다운로드 중 오류 발생: {e}")
+
 
         else:
             st.info("💡 왼쪽에 웹페이지 URL을 입력하고 **스트리밍 주소 분석**을 마친 뒤, **다운로드 시작** 버튼을 눌러주세요.")
