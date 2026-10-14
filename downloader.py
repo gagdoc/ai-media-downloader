@@ -2,6 +2,8 @@ import os
 import re
 import json
 import time
+import subprocess
+import shutil
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -9,13 +11,37 @@ from playwright.sync_api import sync_playwright
 import yt_dlp
 from PIL import Image
 
+def launch_browser(playwright_instance):
+    """
+    Launches Chromium with auto-installation fallback and cloud container flags.
+    """
+    args = [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--single-process"
+    ]
+    try:
+        return playwright_instance.chromium.launch(headless=True, args=args)
+    except Exception as e:
+        # If browser is missing (common on Streamlit Cloud), auto-install it
+        print("⚠️ Chromium binary not found, attempting auto-installation via playwright install chromium...")
+        try:
+            subprocess.run([shutil.which("playwright") or "playwright", "install", "chromium"], check=True)
+            return playwright_instance.chromium.launch(headless=True, args=args)
+        except Exception as install_err:
+            print(f"❌ Failed to auto-install playwright chromium: {install_err}")
+            raise e
+
+
 def scrape_bing(keyword, limit=50, progress_callback=None):
     """
     Scrapes high-resolution image URLs using Bing Images search with Playwright.
     """
     urls = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
@@ -67,7 +93,7 @@ def scrape_google(keyword, limit=50, progress_callback=None):
     """
     urls = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
@@ -154,7 +180,7 @@ def scrape_instagram(url, progress_callback=None):
     """
     urls = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800}
@@ -499,7 +525,7 @@ def extract_m3u8_from_webpage(page_url):
     img_exts = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.css', '.js')
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800}

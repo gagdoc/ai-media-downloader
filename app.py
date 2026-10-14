@@ -2,9 +2,22 @@ import streamlit as st
 import os
 import re
 import subprocess
+import shutil
 import tempfile
 from downloader import scrape_image_urls, download_images, get_youtube_info, download_youtube_video, create_video_from_images, extract_m3u8_from_webpage, download_web_video, scrape_instagram, merge_videos, reencode_video_for_mac, merge_images
 from PIL import Image
+
+# Ensure Playwright browser binary is installed on Streamlit Cloud
+@st.cache_resource(show_spinner=False)
+def ensure_playwright_installed():
+    try:
+        pw_bin = shutil.which("playwright") or "playwright"
+        subprocess.run([pw_bin, "install", "chromium"], check=True)
+    except Exception as e:
+        print(f"Playwright auto-install note: {e}")
+
+ensure_playwright_installed()
+
 # Page configuration
 st.set_page_config(
     page_title="AI Media Batch Downloader",
@@ -12,6 +25,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 
 # Custom premium CSS styling
 st.markdown("""
