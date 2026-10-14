@@ -93,8 +93,14 @@ st.markdown("""
 st.markdown('<h1 class="main-title">🎬 AI 미디어 일괄 다운로더</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">고화질 이미지 크롤링, 유튜브 비디오 추출, 맥북 전용 영상 재인코딩, 사진으로 동영상 만들기까지 올인원 미디어 스튜디오.</p>', unsafe_allow_html=True)
 
+# Environment detection: True only if running locally on macOS with osascript
+IS_MAC_LOCAL = os.path.exists("/Users/gagdox") and shutil.which("osascript") is not None
+
 # Thread-safe macOS native folder picker using AppleScript (Forces Finder to foreground)
 def select_folder_via_applescript(prompt="저장할 폴더를 선택하세요:"):
+    if not IS_MAC_LOCAL:
+        st.info("☁️ 웹(클라우드) 모드에서는 파일이 서버에서 준비된 후 **[📥 브라우저 다운로드 버튼]**을 눌러 내 컴퓨터의 다운로드 폴더로 바로 저장됩니다.")
+        return None
     try:
         script = f'''
         tell application "Finder"
@@ -125,8 +131,9 @@ def format_duration(seconds):
     return f"{mins:02d}:{secs:02d}"
 
 # Helper for environment-aware download directory
-DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if os.path.exists("/Users/gagdox") else os.path.join(tempfile.gettempdir(), "media_downloads")
+DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if IS_MAC_LOCAL else os.path.join(tempfile.gettempdir(), "media_downloads")
 os.makedirs(DEFAULT_DIR, exist_ok=True)
+
 
 # Helper function to render a direct browser download button
 def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터에 다운로드", mime=None):
