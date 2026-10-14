@@ -153,14 +153,18 @@ os.makedirs(DEFAULT_DIR, exist_ok=True)
 def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터에 다운로드", mime=None, key_prefix="dl"):
     if file_path and os.path.exists(file_path):
         try:
+            filename = os.path.basename(file_path)
+            f_size = os.path.getsize(file_path)
+            size_mb = f_size / (1024 * 1024)
+            size_str = f" ({size_mb:.1f} MB)" if size_mb >= 0.1 else f" ({f_size / 1024:.1f} KB)"
+            
             with open(file_path, "rb") as f:
                 data = f.read()
-            filename = os.path.basename(file_path)
             
             dl_col, del_col = st.columns([3, 1])
             with dl_col:
                 st.download_button(
-                    label=label,
+                    label=f"{label}{size_str}",
                     data=data,
                     file_name=filename,
                     mime=mime or "application/octet-stream",
@@ -181,6 +185,24 @@ def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터�
                         st.error(f"삭제 실패: {err}")
         except Exception as e:
             st.error(f"다운로드 버튼 생성 실패: {e}")
+
+
+def safe_video_preview(video_path, max_size_mb=80):
+    """
+    Renders video preview only if file size is within safety limits.
+    Prevents browser crashes and memory overflow in cloud containers for large videos.
+    """
+    if not video_path or not os.path.exists(video_path):
+        return
+    try:
+        f_size = os.path.getsize(video_path)
+        size_mb = f_size / (1024 * 1024)
+        if size_mb <= max_size_mb:
+            st.video(video_path)
+        else:
+            st.info(f"💡 영상 용량이 큽니다 ({size_mb:.1f} MB). 서버 메모리 보호 및 브라우저 끊김 방지를 위해 미리보기를 생략합니다. 위 [다운로드] 버튼을 이용해 바로 저장해 주세요.")
+    except Exception:
+        pass
 
 
 # Initialize Session States
@@ -530,23 +552,39 @@ with tab2:
             yt_log_box = st.empty()
             
             def yt_progress_cb(percent, speed, eta):
-                yt_progress.progress(percent)
-                speed_mb = speed / (1024 * 1024) if speed else 0
-                eta_str = f"{int(eta)}초" if eta else "계산 중"
-                yt_progress_text.markdown(f"**다운로드 진행률:** `{percent * 100:.1f}%` 완료")
-                yt_log_box.code(
-                    f"진행 속도: {speed_mb:.2f} MB/s\n"
-                    f"남은 시간: {eta_str}\n"
-                    f"저장 위치: {st.session_state.yt_save_dir}/"
-                )
+                try:
+                    safe_percent = min(max(float(percent), 0.0), 1.0)
+                    yt_progress.progress(safe_percent)
+                    speed_mb = speed / (1024 * 1024) if speed else 0
+                    
+                    import math
+                    if eta is not None and not math.isinf(eta) and not math.isnan(eta) and eta >= 0:
+                        eta_str = f"{int(eta)}초"
+                    else:
+                        eta_str = "계산 중"
+                        
+                    yt_progress_text.markdown(f"**다운로드 진행률:** `{safe_percent * 100:.1f}%` 완료")
+                    yt_log_box.code(
+                        f"진행 속도: {speed_mb:.2f} MB/s\n"
+                        f"남은 시간: {eta_str}\n"
+                        f"저장 위치: {st.session_state.yt_save_dir}/"
+                    )
+                except Exception:
+                    pass
                 
-            downloaded_video = download_youtube_video(
-                url=st.session_state.yt_info['_url'],
-                base_dir=st.session_state.yt_save_dir,
-                quality=selected_quality,
-                progress_callback=yt_progress_cb,
-                reencode_mac=mac_reencode_opt
-            )
+            dl_err = None
+            try:
+                downloaded_video = download_youtube_video(
+                    url=st.session_state.yt_info['_url'],
+                    base_dir=st.session_state.yt_save_dir,
+                    quality=selected_quality,
+                    progress_callback=yt_progress_cb,
+                    reencode_mac=mac_reencode_opt
+                )
+            except Exception as e:
+                downloaded_video = None
+                dl_err = str(e)
+                yt_status.error(f"❌ 다운로드 오류가 발생했습니다: {e}")
             
             if downloaded_video:
                 yt_progress.progress(1.0)
@@ -556,8 +594,8 @@ with tab2:
                 
                 # Direct browser download & preview
                 render_download_button(downloaded_video, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
-                st.video(downloaded_video)
-            else:
+                safe_video_preview(downloaded_video)
+            elif not dl_err:
                 yt_status.error("❌ 영상 다운로드 중 오류가 발생했습니다. 네트워크 환경 또는 영상 접근성(비공개/로그인 필요 등)을 확인해 주세요.")
         else:
             st.info("💡 왼쪽에 유튜브 또는 인스타그램 URL을 입력하고 **영상 정보 분석**을 마친 뒤, **다운로드 시작** 버튼을 눌러주세요.")
@@ -722,7 +760,8 @@ with tab_mac:
                         mac_logs.append(f"❌ [{idx+1:02d}/{len(mac_files_to_convert):02d}] {display_name} → 오류: {str(e)[:80]}")
                         mac_results.append({"name": display_name, "out": None, "success": False})
 
-                    mac_prog.progress((idx + 1) / len(mac_files_to_convert))
+                    safe_ratio = min(max((idx + 1) / max(len(mac_files_to_convert), 1), 0.0), 1.0)
+                    mac_prog.progress(safe_ratio)
                     mac_log_box.code("\n".join(mac_logs[-8:]))
 
                 st.session_state.mac_reencode_results = mac_results
@@ -741,7 +780,7 @@ with tab_mac:
                 if r["success"]:
                     st.markdown(f"✅ **{r['name']}**")
                     render_download_button(r["out"], label=f"📥 {os.path.basename(r['out'])} 다운로드", mime="video/mp4")
-                    st.video(r["out"])
+                    safe_video_preview(r["out"])
                 else:
                     st.markdown(f"❌ **{r['name']}** → 인코딩 실패")
         else:
@@ -865,7 +904,7 @@ with tab3:
             st.subheader("👁️ 제작된 슬라이드쇼 동영상 재생")
             st.write("아래 플레이어에서 생성된 동영상을 바로 확인해 보세요!")
             render_download_button(st.session_state.generated_video_path, label="📥 제작된 슬라이드쇼 영상 다운로드 (MP4)", mime="video/mp4")
-            st.video(st.session_state.generated_video_path)
+            safe_video_preview(st.session_state.generated_video_path)
         else:
             st.info("💡 왼쪽에 설정을 지정하고 **비디오 제작 시작** 버튼을 눌러주시면, 여기에 완성된 플레이어가 제공됩니다.")
 
@@ -932,15 +971,25 @@ with tab4:
             web_log_box = st.empty()
             
             def web_progress_cb(percent, speed, eta):
-                web_progress.progress(percent)
-                speed_mb = speed / (1024 * 1024) if speed else 0
-                eta_str = f"{int(eta)}초" if eta else "계산 중"
-                web_progress_text.markdown(f"**다운로드 진행률:** `{percent * 100:.1f}%` 완료")
-                web_log_box.code(
-                    f"진행 속도: {speed_mb:.2f} MB/s\n"
-                    f"남은 시간: {eta_str}\n"
-                    f"저장 위치: {os.path.join(st.session_state.web_save_dir, web_output_name)}"
-                )
+                try:
+                    safe_percent = min(max(float(percent), 0.0), 1.0)
+                    web_progress.progress(safe_percent)
+                    speed_mb = speed / (1024 * 1024) if speed else 0
+                    
+                    import math
+                    if eta is not None and not math.isinf(eta) and not math.isnan(eta) and eta >= 0:
+                        eta_str = f"{int(eta)}초"
+                    else:
+                        eta_str = "계산 중"
+                        
+                    web_progress_text.markdown(f"**다운로드 진행률:** `{safe_percent * 100:.1f}%` 완료")
+                    web_log_box.code(
+                        f"진행 속도: {speed_mb:.2f} MB/s\n"
+                        f"남은 시간: {eta_str}\n"
+                        f"저장 위치: {os.path.join(st.session_state.web_save_dir, web_output_name)}"
+                    )
+                except Exception:
+                    pass
                 
             try:
                 downloaded_file = download_web_video(
@@ -960,7 +1009,7 @@ with tab4:
                     
                     # Direct browser download & preview
                     render_download_button(downloaded_file, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
-                    st.video(downloaded_file)
+                    safe_video_preview(downloaded_file)
                 else:
                     web_status.error("❌ 영상 다운로드 중 오류가 발생했습니다.")
             except Exception as e:
@@ -1327,7 +1376,7 @@ with tab6:
                 output_full_path = os.path.join(st.session_state.merge_save_dir, out_name)
                 
                 def merge_progress_cb(current, total, msg):
-                    ratio = min(current / total, 1.0)
+                    ratio = min(max(float(current) / max(float(total), 1.0), 0.0), 1.0)
                     m_progress.progress(ratio)
                     m_progress_text.markdown(f"**병합 작업 진행률:** `{ratio * 100:.1f}%` 완료")
                     m_log_box.code(f"진행 정보: {msg}\n저장 파일: {output_full_path}")
@@ -1346,7 +1395,7 @@ with tab6:
                     m_status.success(f"🎉 **영상 이어붙이기 병합 성공!**\n\n완료된 영상 파일: `{os.path.basename(res_path)}`")
                     m_log_box.code(f"성공적으로 병합 완료.\n결과 경로: {res_path}")
                     render_download_button(res_path, label="📥 병합된 비디오 다운로드 (MP4)", mime="video/mp4")
-                    st.video(res_path)
+                    safe_video_preview(res_path)
                 else:
                     m_status.error("❌ 영상 병합 처리 중 오류가 발생했습니다.")
 

@@ -357,19 +357,48 @@ def get_youtube_info(url):
             print(f"Failed to fetch video info: {e}")
             return None
 
+def get_ffmpeg_binary():
+    """
+    Finds available ffmpeg binary, prioritizing system path then imageio-ffmpeg.
+    """
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def is_already_h264_aac(file_path):
+    """
+    Checks if a video file already has H.264 video and AAC audio codecs using ffmpeg.
+    """
+    if not file_path or not os.path.exists(file_path):
+        return False
+    ffmpeg_exe = get_ffmpeg_binary()
+    try:
+        cmd = [ffmpeg_exe, "-i", file_path]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        output = res.stderr.lower()
+        has_h264 = ("video: h264" in output or "video: avc1" in output)
+        has_aac = ("audio: aac" in output)
+        return has_h264 and has_aac
+    except Exception:
+        return False
+
+
 def reencode_video_for_mac(input_path, output_path=None, crf="22", preset="fast", progress_callback=None):
     """
     Re-encodes video & audio with H.264/AAC + yuv420p + faststart to ensure 100% macOS QuickTime & Finder preview compatibility.
-    Handles videos without audio stream by generating a silent stereo track if needed.
+    If already H.264 and AAC, performs a fast stream-copy remux (0.5s) to save CPU and avoid cloud timeouts.
     """
-    import subprocess
-    import imageio_ffmpeg
-
     if not input_path or not os.path.exists(input_path):
         print(f"File not found: {input_path}")
         return None
 
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_exe = get_ffmpeg_binary()
 
     if output_path is None:
         base_name = os.path.splitext(input_path)[0]
@@ -380,6 +409,24 @@ def reencode_video_for_mac(input_path, output_path=None, crf="22", preset="fast"
         os.makedirs(dir_name, exist_ok=True)
 
     temp_mac_path = output_path + ".mac_temp.mp4"
+
+    # Fast remux if already H.264 + AAC
+    if is_already_h264_aac(input_path) and input_path.lower().endswith(".mp4"):
+        fast_cmd = [
+            ffmpeg_exe, "-y",
+            "-i", input_path,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            temp_mac_path
+        ]
+        res_fast = subprocess.run(fast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res_fast.returncode == 0 and os.path.exists(temp_mac_path):
+            if os.path.abspath(input_path) != os.path.abspath(output_path) and os.path.exists(output_path):
+                os.remove(output_path)
+            if os.path.abspath(input_path) == os.path.abspath(output_path) and os.path.exists(input_path):
+                os.remove(input_path)
+            os.rename(temp_mac_path, output_path)
+            return output_path
 
     cmd = [
         ffmpeg_exe, "-y",
@@ -436,37 +483,74 @@ def download_youtube_video(url, base_dir="downloads", quality="1080p", progress_
     Downloads high-quality YouTube or Instagram video into base_dir using yt-dlp.
     Re-encodes video & audio with H.264/AAC + faststart to ensure 100% macOS QuickTime & Finder preview compatibility if reencode_mac is True.
     """
-    import imageio_ffmpeg
+    import math
     base_dir = sanitize_base_dir(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
+    last_callback_time = [0.0]
+    
     def hook(d):
-        if d['status'] == 'downloading':
-            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-            downloaded = d.get('downloaded_bytes', 0)
-            if total_bytes and progress_callback:
-                percent = downloaded / total_bytes
-                speed = d.get('speed', 0)  # bytes per second
-                eta = d.get('eta', 0)  # seconds
-                progress_callback(percent, speed, eta)
+        try:
+            status = d.get('status')
+            if status == 'downloading':
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
+                
+                percent = 0.0
+                if total_bytes and total_bytes > 0:
+                    percent = min(max(float(downloaded) / float(total_bytes), 0.0), 1.0)
+                
+                speed = d.get('speed') or 0
+                eta = d.get('eta')
+                
+                if eta is not None and (math.isinf(eta) or math.isnan(eta) or eta < 0):
+                    eta = None
+                if speed is not None and (math.isinf(speed) or math.isnan(speed) or speed < 0):
+                    speed = 0
+                
+                now = time.time()
+                # Rate limit callback to at most once per 0.4 seconds, or when finishing
+                if progress_callback and (now - last_callback_time[0] >= 0.4 or percent >= 0.99):
+                    last_callback_time[0] = now
+                    progress_callback(percent, speed, eta)
+            elif status == 'finished':
+                if progress_callback:
+                    progress_callback(1.0, 0, 0)
+        except Exception:
+            pass
                 
     # Extract numerical height from quality string (e.g. "1080p (1080p Full HD)" -> 1080)
-    height_match = re.search(r'\d+', quality)
+    height_match = re.search(r'\d+', quality) if quality else None
     if height_match:
         height = height_match.group()
-        fmt = f'bestvideo[height<={height}]+bestaudio/best[height<={height}]/best'
+        # Prefer native H.264/AAC MP4 streams first to avoid heavy CPU re-encoding on cloud
+        fmt = (
+            f'bestvideo[height<={height}][vcodec^=avc1]+bestaudio[ext=m4a]/'
+            f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/'
+            f'bestvideo[height<={height}]+bestaudio/'
+            f'best[height<={height}]/best'
+        )
     else:
-        fmt = 'bestvideo+bestaudio/best'
+        fmt = (
+            'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/'
+            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+            'bestvideo+bestaudio/best'
+        )
     
-    # Get the static ffmpeg executable path installed by imageio-ffmpeg
-    ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_path = get_ffmpeg_binary()
     
     ydl_opts = {
         'format': fmt,
         'outtmpl': os.path.join(base_dir, '%(title)s.%(ext)s'),
+        'merge_output_format': 'mp4',
         'ffmpeg_location': ffmpeg_path,
         'progress_hooks': [hook],
         'quiet': True,
+        'retries': 10,
+        'fragment_retries': 10,
+        'buffersize': 1024 * 64,
+        'http_chunk_size': 10485760,
+        'noplaylist': True,
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -494,7 +578,7 @@ def download_youtube_video(url, base_dir="downloads", quality="1080p", progress_
             return actual_path
         except Exception as e:
             print(f"Video download failed: {e}")
-            return None
+            raise e
 
 def create_video_from_images(image_paths, output_path, duration_per_image=2, progress_callback=None):
     """
@@ -668,30 +752,50 @@ def download_web_video(m3u8_url, base_dir="downloads", output_name="web_video.mp
     """
     Downloads HLS stream with customized headers (e.g., Referer) and configurations.
     """
+    import math
     base_dir = sanitize_base_dir(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
+    last_callback_time = [0.0]
+    
     def hook(d):
-        if d['status'] == 'downloading':
-            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
-            downloaded = d.get('downloaded_bytes', 0)
-            
-            percent = 0.0
-            frag_index = d.get('fragment_index')
-            frag_count = d.get('fragment_count')
-            if frag_index and frag_count:
-                percent = frag_index / frag_count
-            elif total_bytes:
-                percent = downloaded / total_bytes
+        try:
+            status = d.get('status')
+            if status == 'downloading':
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
                 
-            if progress_callback:
-                speed = d.get('speed', 0)
-                eta = d.get('eta', 0)
-                progress_callback(percent, speed, eta)
+                percent = 0.0
+                frag_index = d.get('fragment_index')
+                frag_count = d.get('fragment_count')
+                if frag_index and frag_count and frag_count > 0:
+                    percent = min(max(float(frag_index) / float(frag_count), 0.0), 1.0)
+                elif total_bytes and total_bytes > 0:
+                    percent = min(max(float(downloaded) / float(total_bytes), 0.0), 1.0)
+                    
+                speed = d.get('speed') or 0
+                eta = d.get('eta')
+                
+                if eta is not None and (math.isinf(eta) or math.isnan(eta) or eta < 0):
+                    eta = None
+                if speed is not None and (math.isinf(speed) or math.isnan(speed) or speed < 0):
+                    speed = 0
+                
+                now = time.time()
+                if progress_callback and (now - last_callback_time[0] >= 0.4 or percent >= 0.99):
+                    last_callback_time[0] = now
+                    progress_callback(percent, speed, eta)
+            elif status == 'finished':
+                if progress_callback:
+                    progress_callback(1.0, 0, 0)
+        except Exception:
+            pass
 
     if not referer:
         referer = "https://iframe.mediadelivery.net/"
     output_path = os.path.join(base_dir, output_name)
+    
+    ffmpeg_path = get_ffmpeg_binary()
     
     ydl_opts = {
         'http_headers': {
@@ -699,11 +803,15 @@ def download_web_video(m3u8_url, base_dir="downloads", output_name="web_video.mp
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         },
         'outtmpl': output_path,
+        'merge_output_format': 'mp4',
+        'ffmpeg_location': ffmpeg_path,
         'external_downloader_args': {
             'ffmpeg': ['-allowed_extensions', 'ALL']
         },
         'progress_hooks': [hook],
         'quiet': True,
+        'retries': 10,
+        'fragment_retries': 10,
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -741,7 +849,7 @@ def merge_videos(video_paths, output_path, resolution="1080p", progress_callback
     if not video_paths:
         return None
         
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_exe = get_ffmpeg_binary()
     output_dir = os.path.dirname(output_path)
     if output_dir:
         output_dir = sanitize_base_dir(output_dir)
