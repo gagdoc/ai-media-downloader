@@ -149,22 +149,39 @@ DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if IS_MAC_L
 os.makedirs(DEFAULT_DIR, exist_ok=True)
 
 
-# Helper function to render a direct browser download button
-def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터에 다운로드", mime=None):
+# Helper function to render a direct browser download button + '서버 다운 삭제' button
+def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터에 다운로드", mime=None, key_prefix="dl"):
     if file_path and os.path.exists(file_path):
         try:
             with open(file_path, "rb") as f:
                 data = f.read()
             filename = os.path.basename(file_path)
-            st.download_button(
-                label=label,
-                data=data,
-                file_name=filename,
-                mime=mime or "application/octet-stream",
-                use_container_width=True
-            )
+            
+            dl_col, del_col = st.columns([3, 1])
+            with dl_col:
+                st.download_button(
+                    label=label,
+                    data=data,
+                    file_name=filename,
+                    mime=mime or "application/octet-stream",
+                    use_container_width=True,
+                    key=f"{key_prefix}_btn_{filename}"
+                )
+            with del_col:
+                if st.button("🗑️ 서버 다운 삭제", key=f"del_{key_prefix}_{filename}", use_container_width=True, help="서버에 남아있는 임시 파일을 즉시 영구 삭제합니다."):
+                    try:
+                        if os.path.isdir(file_path):
+                            shutil.rmtree(file_path, ignore_errors=True)
+                        else:
+                            os.remove(file_path)
+                        st.toast("✅ 서버 임시 파일이 즉시 완전 삭제되었습니다.")
+                        st.success("✅ 서버의 임시 파일이 즉시 완전 삭제되었습니다.")
+                        st.rerun()
+                    except Exception as err:
+                        st.error(f"삭제 실패: {err}")
         except Exception as e:
             st.error(f"다운로드 버튼 생성 실패: {e}")
+
 
 # Initialize Session States
 if "scraped_urls" not in st.session_state:
@@ -213,7 +230,18 @@ if "img_merge_uploader_signature" not in st.session_state:
     st.session_state.img_merge_uploader_signature = None
 if "img_merge_save_dir" not in st.session_state:
     st.session_state.img_merge_save_dir = DEFAULT_DIR
-
+# Sidebar Server Management
+with st.sidebar:
+    st.markdown("### ☁️ 서버 파일 관리")
+    if not IS_MAC_LOCAL:
+        st.caption("🔒 작업 후 서버에 파일이 남지 않도록 언제든 즉시 파기할 수 있습니다.")
+        if st.button("🗑️ 서버 다운 삭제 (전체 파기)", key="btn_clear_all_server", use_container_width=True, help="클라우드 서버에 다운로드되거나 변환된 모든 임시 파일을 즉시 영구 파기합니다."):
+            temp_dir = os.path.join(tempfile.gettempdir(), "media_downloads")
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                os.makedirs(temp_dir, exist_ok=True)
+            st.toast("🧹 서버의 모든 임시 파일이 즉시 영구 파기되었습니다.")
+            st.rerun()
 
 
 # Tab Layout
@@ -402,14 +430,28 @@ with tab1:
                             for file_path in downloaded_files:
                                 if os.path.exists(file_path):
                                     zip_file.write(file_path, arcname=os.path.basename(file_path))
-                        zip_buffer.seek(0)
-                        st.download_button(
-                            label=f"📦 전체 이미지 압축 다운로드 ({st.session_state.img_subfolder}.zip)",
-                            data=zip_buffer.getvalue(),
-                            file_name=f"{st.session_state.img_subfolder}.zip",
-                            mime="application/zip",
-                            use_container_width=True
-                        )
+                        zip_col, del_zip_col = st.columns([3, 1])
+                        with zip_col:
+                            st.download_button(
+                                label=f"📦 전체 이미지 압축 다운로드 ({st.session_state.img_subfolder}.zip)",
+                                data=zip_buffer.getvalue(),
+                                file_name=f"{st.session_state.img_subfolder}.zip",
+                                mime="application/zip",
+                                use_container_width=True,
+                                key="btn_zip_download"
+                            )
+                        with del_zip_col:
+                            if st.button("🗑️ 서버 다운 삭제", key="del_zip_images", use_container_width=True, help="서버에 다운로드된 이미지 임시 파일들을 모두 삭제합니다."):
+                                for f in downloaded_files:
+                                    try:
+                                        if os.path.exists(f):
+                                            os.remove(f)
+                                    except Exception:
+                                        pass
+                                st.toast("✅ 서버의 이미지 임시 파일들이 완전 삭제되었습니다.")
+                                st.success("✅ 서버의 이미지 임시 파일들이 완전 삭제되었습니다.")
+                                st.rerun()
+
         else:
             if not search_btn:
                 st.info("💡 왼쪽에 키워드와 다운로드 수량을 입력한 뒤, **이미지 검색 및 분석 시작** 버튼을 눌러주세요.")
