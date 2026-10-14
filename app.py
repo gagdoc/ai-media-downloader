@@ -120,37 +120,58 @@ def format_duration(seconds):
         return f"{hours:02d}:{mins:02d}:{secs:02d}"
     return f"{mins:02d}:{secs:02d}"
 
+# Helper for environment-aware download directory
+DEFAULT_DIR = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/" if os.path.exists("/Users/gagdox") else os.path.join(tempfile.gettempdir(), "media_downloads")
+os.makedirs(DEFAULT_DIR, exist_ok=True)
+
+# Helper function to render a direct browser download button
+def render_download_button(file_path, label="📥 브라우저로 내 컴퓨터에 다운로드", mime=None):
+    if file_path and os.path.exists(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+            filename = os.path.basename(file_path)
+            st.download_button(
+                label=label,
+                data=data,
+                file_name=filename,
+                mime=mime or "application/octet-stream",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"다운로드 버튼 생성 실패: {e}")
+
 # Initialize Session States
 if "scraped_urls" not in st.session_state:
     st.session_state.scraped_urls = []
 if "search_keyword" not in st.session_state:
     st.session_state.search_keyword = ""
 if "save_dir" not in st.session_state:
-    st.session_state.save_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.save_dir = DEFAULT_DIR
 if "yt_save_dir" not in st.session_state:
-    st.session_state.yt_save_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.yt_save_dir = DEFAULT_DIR
 if "yt_info" not in st.session_state:
     st.session_state.yt_info = None
 if "mac_reencode_dir" not in st.session_state:
-    st.session_state.mac_reencode_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.mac_reencode_dir = DEFAULT_DIR
 if "mac_reencode_out_dir" not in st.session_state:
-    st.session_state.mac_reencode_out_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.mac_reencode_out_dir = DEFAULT_DIR
 if "mac_reencode_results" not in st.session_state:
     st.session_state.mac_reencode_results = []
 if "slideshow_dir" not in st.session_state:
-    st.session_state.slideshow_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.slideshow_dir = DEFAULT_DIR
 if "slideshow_out_dir" not in st.session_state:
-    st.session_state.slideshow_out_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.slideshow_out_dir = DEFAULT_DIR
 if "generated_video_path" not in st.session_state:
     st.session_state.generated_video_path = None
 if "web_save_dir" not in st.session_state:
-    st.session_state.web_save_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.web_save_dir = DEFAULT_DIR
 if "web_m3u8_url" not in st.session_state:
     st.session_state.web_m3u8_url = None
 if "webm_convert_dir" not in st.session_state:
-    st.session_state.webm_convert_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.webm_convert_dir = DEFAULT_DIR
 if "webm_output_dir" not in st.session_state:
-    st.session_state.webm_output_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.webm_output_dir = DEFAULT_DIR
 if "webm_convert_results" not in st.session_state:
     st.session_state.webm_convert_results = []
 if "merge_video_items" not in st.session_state:
@@ -158,7 +179,7 @@ if "merge_video_items" not in st.session_state:
 if "merge_uploader_signature" not in st.session_state:
     st.session_state.merge_uploader_signature = None
 if "merge_save_dir" not in st.session_state:
-    st.session_state.merge_save_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.merge_save_dir = DEFAULT_DIR
 
 # Image Merge Session States
 if "img_merge_items" not in st.session_state:
@@ -166,7 +187,8 @@ if "img_merge_items" not in st.session_state:
 if "img_merge_uploader_signature" not in st.session_state:
     st.session_state.img_merge_uploader_signature = None
 if "img_merge_save_dir" not in st.session_state:
-    st.session_state.img_merge_save_dir = "/Users/gagdox/Pictures/AuraLens_Sorted/소스/"
+    st.session_state.img_merge_save_dir = DEFAULT_DIR
+
 
 
 # Tab Layout
@@ -352,7 +374,25 @@ with tab1:
                         progress_callback=download_cb
                     )
                     
-                    download_status.success(f"🎉 **일괄 다운로드 완료!** 총 `{len(downloaded_files)}`개의 이미지가 `{os.path.abspath(os.path.join(st.session_state.save_dir, st.session_state.img_subfolder))}/` 경로에 모두 저장되었습니다!")
+                    download_status.success(f"🎉 **일괄 다운로드 완료!** 총 `{len(downloaded_files)}`개의 이미지가 준비되었습니다.")
+                    
+                    # Create ZIP file for 1-click browser download
+                    if downloaded_files:
+                        import zipfile
+                        import io
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                            for file_path in downloaded_files:
+                                if os.path.exists(file_path):
+                                    zip_file.write(file_path, arcname=os.path.basename(file_path))
+                        zip_buffer.seek(0)
+                        st.download_button(
+                            label=f"📦 전체 이미지 압축 다운로드 ({st.session_state.img_subfolder}.zip)",
+                            data=zip_buffer.getvalue(),
+                            file_name=f"{st.session_state.img_subfolder}.zip",
+                            mime="application/zip",
+                            use_container_width=True
+                        )
         else:
             if not search_btn:
                 st.info("💡 왼쪽에 키워드와 다운로드 수량을 입력한 뒤, **이미지 검색 및 분석 시작** 버튼을 눌러주세요.")
@@ -460,8 +500,12 @@ with tab2:
             if downloaded_video:
                 yt_progress.progress(1.0)
                 yt_progress_text.markdown("**다운로드 진행률:** `100.0%` 완료")
-                yt_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 저장되었습니다:\n\n`{downloaded_video}`")
+                yt_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 준비되었습니다:\n\n`{os.path.basename(downloaded_video)}`")
                 yt_log_box.code(f"성공적으로 비디오 추출 완료.\n완료 경로: {downloaded_video}")
+                
+                # Direct browser download & preview
+                render_download_button(downloaded_video, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
+                st.video(downloaded_video)
             else:
                 yt_status.error("❌ 영상 다운로드 중 오류가 발생했습니다. 네트워크 환경 또는 영상 접근성(비공개/로그인 필요 등)을 확인해 주세요.")
         else:
@@ -651,7 +695,8 @@ with tab_mac:
             st.subheader("📋 변환 완료 목록 및 미리보기")
             for r in st.session_state.mac_reencode_results:
                 if r["success"]:
-                    st.markdown(f"✅ **{r['name']}** → `{r['out']}`")
+                    st.markdown(f"✅ **{r['name']}**")
+                    render_download_button(r["out"], label=f"📥 {os.path.basename(r['out'])} 다운로드", mime="video/mp4")
                     st.video(r["out"])
                 else:
                     st.markdown(f"❌ **{r['name']}** → 인코딩 실패")
@@ -783,6 +828,7 @@ with tab3:
             st.write("")
             st.subheader("👁️ 제작된 슬라이드쇼 동영상 재생")
             st.write("아래 플레이어에서 생성된 동영상을 바로 확인해 보세요!")
+            render_download_button(st.session_state.generated_video_path, label="📥 제작된 슬라이드쇼 영상 다운로드 (MP4)", mime="video/mp4")
             st.video(st.session_state.generated_video_path)
         else:
             st.info("💡 왼쪽에 설정을 지정하고 **비디오 제작 시작** 버튼을 눌러주시면, 여기에 완성된 플레이어가 제공됩니다.")
@@ -880,10 +926,15 @@ with tab4:
             if downloaded_file:
                 web_progress.progress(1.0)
                 web_progress_text.markdown("**다운로드 진행률:** `100.0%` 완료")
-                web_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 저장되었습니다:\n\n`{downloaded_file}`")
+                web_status.success(f"🎉 **다운로드 최종 성공!**\n\n영상 파일이 성공적으로 준비되었습니다:\n\n`{os.path.basename(downloaded_file)}`")
                 web_log_box.code(f"성공적으로 웹 비디오 추출 완료.\n완료 경로: {downloaded_file}")
+                
+                # Direct browser download & preview
+                render_download_button(downloaded_file, label="📥 내 컴퓨터/스마트폰으로 비디오 다운로드 (MP4)", mime="video/mp4")
+                st.video(downloaded_file)
             else:
                 web_status.error("❌ 영상 다운로드 중 오류가 발생했습니다. pycryptodomex 패키지 및 네트워크 환경을 확인해 주세요.")
+
         else:
             st.info("💡 왼쪽에 웹페이지 URL을 입력하고 **스트리밍 주소 분석**을 마친 뒤, **다운로드 시작** 버튼을 눌러주세요.")
 
@@ -1089,7 +1140,8 @@ with tab5:
             st.subheader("📋 변환 결과 목록")
             for r in st.session_state.webm_convert_results:
                 if r["success"]:
-                    st.markdown(f"✅ **{r['name']}** → `{r['out']}`")
+                    st.markdown(f"✅ **{r['name']}**")
+                    render_download_button(r["out"], label=f"📥 {os.path.basename(r['out'])} 다운로드", mime="video/mp4")
                 else:
                     st.markdown(f"❌ **{r['name']}** → 변환 실패")
         else:
@@ -1259,8 +1311,10 @@ with tab6:
                 if res_path and os.path.exists(res_path):
                     m_progress.progress(1.0)
                     m_progress_text.markdown("**병합 작업 진행률:** `100.0%` 완료")
-                    m_status.success(f"🎉 **영상 이어붙이기 병합 성공!**\n\n완료된 영상 파일:\n\n`{res_path}`")
+                    m_status.success(f"🎉 **영상 이어붙이기 병합 성공!**\n\n완료된 영상 파일: `{os.path.basename(res_path)}`")
                     m_log_box.code(f"성공적으로 병합 완료.\n결과 경로: {res_path}")
+                    render_download_button(res_path, label="📥 병합된 비디오 다운로드 (MP4)", mime="video/mp4")
+                    st.video(res_path)
                 else:
                     m_status.error("❌ 영상 병합 처리 중 오류가 발생했습니다.")
 
@@ -1445,7 +1499,8 @@ with tab_img_merge:
                 )
                 
                 if res_path and os.path.exists(res_path):
-                    m_status.success(f"🎉 **이미지 병합 성공!**\n\n결과 파일: `{res_path}`")
+                    m_status.success(f"🎉 **이미지 병합 성공!**\n\n결과 파일: `{os.path.basename(res_path)}`")
+                    render_download_button(res_path, label="📥 병합된 이미지 다운로드", mime="image/png")
                     st.image(res_path, caption="병합 결과 미리보기", use_container_width=True)
                 else:
                     m_status.error("❌ 이미지 병합 처리 중 오류가 발생했습니다.")
