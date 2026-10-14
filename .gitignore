@@ -1,0 +1,40 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets & Environment variables
+.env
+.env.*
+
+# Python cache & compiled
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Downloaded media & temporary files
+downloads/
+*.mp4
+*.m4a
+*.webm
+*.part
+*.ytdl
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Streamlit logs
+.streamlit/secrets.toml
+
+# Test files & logs
+test_*.py
+test_cookies.txt

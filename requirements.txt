@@ -1,0 +1,8 @@
+streamlit
+playwright
+beautifulsoup4
+requests
+yt-dlp
+opencv-python-headless
+imageio-ffmpeg
+Pillow

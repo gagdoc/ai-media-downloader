@@ -1,0 +1,3 @@
+[server]
+maxUploadSize = 10240   # 10 GB (MB 단위)
+maxMessageSize = 10240  # WebSocket 메시지 최대 크기도 동일하게
